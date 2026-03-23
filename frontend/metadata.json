@@ -1,0 +1,5 @@
+{
+  "name": "Aura AI - Intelligent Meeting Assistant",
+  "description": "An AI-powered meeting assistant that records, transcribes, and summarizes your meetings, syncing them directly to your calendar and managing them in folders.",
+  "requestFramePermissions": ["microphone"]
+}
