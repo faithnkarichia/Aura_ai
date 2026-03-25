@@ -80,7 +80,7 @@ export default function Dashboard() {
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' });
         
         // Convert to base64
-        // base64 turns a file in to text
+        // base64 turns a file in to text,
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
