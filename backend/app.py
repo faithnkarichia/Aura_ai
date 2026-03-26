@@ -1,12 +1,27 @@
 from flask import Flask
 from extensions import db
+import os
+from dotenv import load_dotenv, find_dotenv
+from datetime import timedelta
+from flask_migrate import Migrate
+
+
+
+from models import User, Meeting, Folder
+
+
+load_dotenv()
 
 app= Flask(__name__)
 
 app.config["SQLALCHEMY_DATABASE_URI"]= "sqlite:///voicenote_ai.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]= False
+app.config["JWT_SECRET_KEY"]= os.getenv("JWT_SECRET_KEY")
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=3)
+
 
 db.init_app(app)
+migrate=Migrate(app,db)
 
 
 @app.route("/")
