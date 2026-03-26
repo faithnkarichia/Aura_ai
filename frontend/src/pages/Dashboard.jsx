@@ -10,13 +10,18 @@ export default function Dashboard() {
   const [meetings, setMeetings] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({ title: '', folder: '' });
+  const [folders, setFolders] = useState(['General', 'Product', 'Marketing', 'Sales', 'Personal']);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   
   const mediaRecorder = useRef(null);
   const audioChunks = useRef([]);
 
   useEffect(() => {
     const storedMeetings = localStorage.getItem('aura_meetings');
-    // i should get the meeting from the backend
+    const storedFolders = localStorage.getItem('aura_folders');
     if (storedMeetings) {
       setMeetings(JSON.parse(storedMeetings));
     } else {
@@ -43,8 +48,19 @@ export default function Dashboard() {
       setMeetings(initialMeetings);
       localStorage.setItem('aura_meetings', JSON.stringify(initialMeetings));
     }
+
+    if (storedFolders) {
+      const parsedFolders = JSON.parse(storedFolders);
+      if (parsedFolders.length > 0) {
+        setFolders(parsedFolders);
+      } else {
+        localStorage.setItem('aura_folders', JSON.stringify(['General', 'Product', 'Marketing', 'Sales', 'Personal']));
+      }
+    } else {
+      localStorage.setItem('aura_folders', JSON.stringify(['General', 'Product', 'Marketing', 'Sales', 'Personal']));
+    }
   }, []);
-// calculating time of record
+
   useEffect(() => {
     let interval;
     if (isRecording) {
@@ -65,47 +81,64 @@ export default function Dashboard() {
 
   const handleStartRecording = async () => {
     try {
-      // ask the user to allow mic access
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder.current = new MediaRecorder(stream);
-      // where the audio data will be stored while recording
       audioChunks.current = [];
-// pushing the audio data  to the array
+
       mediaRecorder.current.ondataavailable = (event) => {
         audioChunks.current.push(event.data);
       };
-// once the recording is stopped set isProcessing to be true and create a blob from the audio data(like joining the chunks together)
+
       mediaRecorder.current.onstop = async () => {
         setIsProcessing(true);
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' });
         
-        // Convert to base64
-        // base64 turns a file in to text,
+        // Auto-save immediately with default values
+        const tempId = Date.now().toString();
+        const defaultMeeting = {
+          id: tempId,
+          title: 'New Meeting',
+          date: new Date().toISOString(),
+          duration: formatTime(recordTime),
+          summary: 'AI is analyzing your meeting...',
+          transcript: 'Transcription in progress...',
+          folder: 'General'
+        };
+
+        const updatedMeetings = [defaultMeeting, ...meetings];
+        setMeetings(updatedMeetings);
+        localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
+
+        // Prepare for editing
+        setEditData({ title: defaultMeeting.title, folder: defaultMeeting.folder });
+        setIsEditing(true);
+        setSelectedMeeting(defaultMeeting);
+
+        // Convert to base64 for Gemini
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64Audio = reader.result.split(',')[1];
           
-          // Real AI processing
-          // transcribe the audio to text and then summarize the transcript using the ai services we created
-          const transcript = await transcribeAudio(base64Audio);
-          const summary = await summarizeTranscript(transcript);
-// creating a new meeting object with the transcript and summary and adding it to the meetings array and local storage
-          const newMeeting = {
-            id: Date.now().toString(),
-            title: `Meeting ${format(new Date(), 'MMM d, HH:mm')}`,
-            date: new Date().toISOString(),
-            duration: formatTime(recordTime),
-            summary: summary,
-            transcript: transcript,
-            folder: 'General'
-          };
-// we add the new meeting to the top of the meetings array and update the state and local storage
-          const updatedMeetings = [newMeeting, ...meetings];
-          setMeetings(updatedMeetings);
-          localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-          setIsProcessing(false);
-          setSelectedMeeting(newMeeting);
+          try {
+            // Real AI processing
+            const transcript = await transcribeAudio(base64Audio);
+            const summary = await summarizeTranscript(transcript);
+
+            // Update the auto-saved meeting with AI results
+            setMeetings(prev => {
+              const updated = prev.map(m => m.id === tempId ? { ...m, transcript, summary } : m);
+              localStorage.setItem('aura_meetings', JSON.stringify(updated));
+              return updated;
+            });
+            
+            // If the user is still looking at the modal for this meeting, update it
+            setSelectedMeeting(prev => prev?.id === tempId ? { ...prev, transcript, summary } : prev);
+          } catch (err) {
+            console.error("AI Processing failed:", err);
+          } finally {
+            setIsProcessing(false);
+          }
         };
       };
 
@@ -114,6 +147,28 @@ export default function Dashboard() {
     } catch (err) {
       console.error("Error accessing microphone:", err);
       alert("Please allow microphone access to record meetings.");
+    }
+  };
+
+  const handleSaveEdit = () => {
+    const updatedMeetings = meetings.map(m => 
+      m.id === selectedMeeting.id ? { ...m, title: editData.title, folder: editData.folder } : m
+    );
+    setMeetings(updatedMeetings);
+    localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
+    setIsEditing(false);
+    setSelectedMeeting(updatedMeetings.find(m => m.id === selectedMeeting.id));
+  };
+
+  const handleCreateFolderInline = (e) => {
+    e.preventDefault();
+    if (newFolderName && !folders.includes(newFolderName)) {
+      const updatedFolders = [...folders, newFolderName];
+      setFolders(updatedFolders);
+      localStorage.setItem('aura_folders', JSON.stringify(updatedFolders));
+      setEditData({ ...editData, folder: newFolderName });
+      setNewFolderName('');
+      setIsCreatingFolder(false);
     }
   };
 
@@ -211,7 +266,10 @@ export default function Dashboard() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedMeeting(null)}
+              onClick={() => {
+                setSelectedMeeting(null);
+                setIsEditing(false);
+              }}
               className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm"
             />
             <motion.div 
@@ -221,16 +279,105 @@ export default function Dashboard() {
               className="relative w-full max-w-4xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               <div className="p-8 border-b border-brand-border flex items-center justify-between bg-brand-muted/30">
-                <div>
-                  <h2 className="text-2xl font-bold mb-1">{selectedMeeting.title}</h2>
-                  <div className="flex items-center gap-4 text-sm text-brand-ink/50 font-medium">
-                    <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.date), 'MMM d, yyyy')}</span>
-                    <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {selectedMeeting.duration}</span>
-                  </div>
+                <div className="flex-1 mr-4">
+                  {isEditing ? (
+                    <div className="space-y-4">
+                      <h2 className="text-xl font-bold">Edit Details</h2>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-brand-ink/40">Title</label>
+                          <input 
+                            type="text" 
+                            className="w-full px-4 py-2 bg-brand-muted rounded-xl border border-brand-border outline-none focus:ring-2 focus:ring-brand-accent"
+                            value={editData.title}
+                            onChange={(e) => setEditData({...editData, title: e.target.value})}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-black uppercase tracking-widest text-brand-ink/40">Folder</label>
+                            <button 
+                              onClick={() => setIsCreatingFolder(true)}
+                              className="text-[10px] font-bold text-brand-accent hover:underline"
+                            >
+                              + New Folder
+                            </button>
+                          </div>
+                          {isCreatingFolder ? (
+                            <div className="flex gap-2">
+                              <input 
+                                autoFocus
+                                type="text" 
+                                className="flex-1 px-3 py-1.5 bg-brand-muted rounded-lg border border-brand-border outline-none text-sm"
+                                placeholder="Folder name..."
+                                value={newFolderName}
+                                onChange={(e) => setNewFolderName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleCreateFolderInline(e);
+                                  if (e.key === 'Escape') setIsCreatingFolder(false);
+                                }}
+                              />
+                              <button 
+                                onClick={handleCreateFolderInline}
+                                className="px-3 py-1.5 bg-brand-ink text-white rounded-lg text-xs font-bold"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          ) : (
+                            <select 
+                              className="w-full px-4 py-2 bg-brand-muted rounded-xl border border-brand-border outline-none focus:ring-2 focus:ring-brand-accent"
+                              value={editData.folder}
+                              onChange={(e) => setEditData({...editData, folder: e.target.value})}
+                            >
+                              {folders.map(f => <option key={f} value={f}>{f}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={handleSaveEdit}
+                          className="bg-brand-ink text-white px-6 py-2 rounded-xl font-bold text-sm hover:scale-105 transition-transform"
+                        >
+                          Save Changes
+                        </button>
+                        <button 
+                          onClick={() => setIsEditing(false)}
+                          className="px-6 py-2 rounded-xl font-bold text-sm border border-brand-border hover:bg-brand-muted transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-4 mb-1">
+                        <h2 className="text-2xl font-bold">{selectedMeeting.title}</h2>
+                        <button 
+                          onClick={() => {
+                            setEditData({ title: selectedMeeting.title, folder: selectedMeeting.folder });
+                            setIsEditing(true);
+                          }}
+                          className="text-xs font-bold text-brand-accent hover:underline"
+                        >
+                          Edit Details
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-brand-ink/50 font-medium">
+                        <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.date), 'MMM d, yyyy')}</span>
+                        <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {selectedMeeting.duration}</span>
+                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{selectedMeeting.folder}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <button 
-                  onClick={() => setSelectedMeeting(null)}
-                  className="p-3 hover:bg-brand-muted rounded-2xl transition-colors"
+                  onClick={() => {
+                    setSelectedMeeting(null);
+                    setIsEditing(false);
+                  }}
+                  className="p-3 hover:bg-brand-muted rounded-2xl transition-colors self-start"
                 >
                   <X className="w-6 h-6" />
                 </button>
