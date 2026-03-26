@@ -1,5 +1,5 @@
 from flask import Flask
-from extensions import db
+from extensions import db,jwt
 import os
 from dotenv import load_dotenv, find_dotenv
 from datetime import timedelta
@@ -22,6 +22,10 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=3)
 
 db.init_app(app)
 migrate=Migrate(app,db)
+jwt.init_app(app)
+
+from views.user import user_bp
+app.register_blueprint(user_bp)
 
 
 @app.route("/")
