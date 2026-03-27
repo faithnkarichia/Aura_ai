@@ -56,7 +56,7 @@ def add_meeting():
             "audio_url": audio_url,
             "language_detection": True,
             # Uses universal-3-pro for en, es, de, fr, it, pt. Else uses universal-2 for support across all other languages
-            "speech_models": ["universal-3-pro"]
+            "speech_models": ["universal-2"]
         }
 
         url = base_url + "/v2/transcript"
