@@ -180,4 +180,15 @@ def update_meeting(meeting_id):
 
 
 # delete meeting
+@meeting_bp.route("/delete_meeting/<int:meeting_id>", methods=["DELETE"])
+@jwt_required()
+def delete_meeting(meeting_id):
+    meeting= Meeting.query.filter_by(id=meeting_id).first()
+    if not meeting:
+        return jsonify({"error": "Meeting not found"}), 404
+    
+    db.session.delete(meeting)
+    db.session.commit()
+
+    return jsonify({"message": "Meeting deleted successfully"}), 200
     
