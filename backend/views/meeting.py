@@ -6,6 +6,7 @@ import requests
 import time
 import os
 from openai import OpenAI
+from datetime import datetime
 
 
 meeting_bp = Blueprint("meeting", __name__)
@@ -120,3 +121,27 @@ def add_meeting():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
         # we take the transcription and send it to ai to get the summary
+
+@meeting_bp.route("/get_meetings", methods=["GET"])
+@jwt_required()
+def get_meetings():
+    user_id=get_jwt_identity()
+    meetings=Meeting.query.filter_by(user_id=user_id).all()
+    meetings_list= [
+        {
+        "id": meeting.id,
+        "title": meeting.title,
+        "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+        "duration": meeting.duration,
+        "audio_url": meeting.audio_url,
+        "summary": meeting.summary,
+        "transcript": meeting.transcript,
+        "scheduled_time": meeting.scheduled_time.isoformat() if meeting.scheduled_time else None,
+        "status": meeting.status,
+        "user_id": meeting.user_id,
+        "folder_id": meeting.folder_id  
+    } for meeting in meetings
+    ]
+
+    return jsonify({"meetings":meetings_list}),200
+    
