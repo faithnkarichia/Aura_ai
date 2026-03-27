@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv, find_dotenv
 from datetime import timedelta
 from flask_migrate import Migrate
+from openai import OpenAI
 
 
 
@@ -11,6 +12,7 @@ from models import User, Meeting, Folder
 
 
 load_dotenv()
+
 
 app= Flask(__name__)
 
@@ -25,7 +27,9 @@ migrate=Migrate(app,db)
 jwt.init_app(app)
 
 from views.user import user_bp
+from views.meeting import meeting_bp
 app.register_blueprint(user_bp)
+app.register_blueprint(meeting_bp)
 
 
 @app.route("/")

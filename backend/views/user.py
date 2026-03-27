@@ -36,6 +36,8 @@ def register():
     db.session.add(new_user)
     db.session.commit()
 
+    return jsonify({"message": "User registered successfully"}), 201
+
 
 
 @user_bp.route("/login", methods=["POST"])
@@ -62,6 +64,8 @@ def login():
     print("user logged in successfully")
     print("creating jwt token")
 
-    access_token= create_access_token({"name": user.name, "email": user.email})
+    # access_token= create_access_token({"name": user.name, "email": user.email, "id": user.id})
+
+    access_token = create_access_token(identity=str(user.id))
 
     return jsonify({"access_token":access_token }),200
