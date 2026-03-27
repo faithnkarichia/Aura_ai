@@ -144,4 +144,40 @@ def get_meetings():
     ]
 
     return jsonify({"meetings":meetings_list}),200
+
+
+# update meeting details
+@meeting_bp.route("/update_meeting/<int:meeting_id>", methods=["PUT"])
+@jwt_required()
+def update_meeting(meeting_id):
+    # receive the data from the frontend
+    data=request.get_json()
+
+    title =data.get("title")
+    scheduled_time = data.get("scheduled_time")
+    status = data.get("status")
+    folder_id = data.get("folder_id")
+   
+
+    meeting= Meeting.query.filter_by(id=meeting_id).first()
+    if not meeting:
+        return jsonify({"error": "Meeting not found"}), 404
+    
+    meeting.title=title or meeting.title 
+    
+    meeting.status = status or meeting.status
+    meeting.folder_id = folder_id or meeting.folder_id
+
+    if scheduled_time:
+        meeting.scheduled_time = datetime.fromisoformat(scheduled_time)
+
+    db.session.commit()
+
+    return jsonify({"message": "Meeting updated successfully"}), 200
+
+
+
+
+
+# delete meeting
     
