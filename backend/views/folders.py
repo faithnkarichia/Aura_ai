@@ -98,3 +98,5 @@ def delete_folder(folder_id):
     
     db.session.delete(folder)
     db.session.commit()
+
+    return jsonify({"message": "Folder deleted successfully"}), 200

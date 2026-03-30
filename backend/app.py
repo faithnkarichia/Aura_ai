@@ -28,6 +28,9 @@ jwt.init_app(app)
 
 from views.user import user_bp
 from views.meeting import meeting_bp
+from views.folders import folder_bp
+
+app.register_blueprint(folder_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(meeting_bp)
 
