@@ -3,7 +3,8 @@ from models import User
 from extensions import bcrypt, db
 from flask_jwt_extended import create_access_token
 
-user_bp= Blueprint("user", __name__)
+user_bp = Blueprint("user", __name__)
+
 
 @user_bp.route("/register", methods=["POST"])
 def register():
@@ -11,11 +12,11 @@ def register():
     # validate data
     # check if the user exists if not create a new user and send it the the database
 
-    data=request.get_json()
-    name= data.get("name")
-    email= data.get("email")
-    password= data.get("password")
-    if not name :
+    data = request.get_json()
+    name = data.get("name")
+    email = data.get("email")
+    password = data.get("password")
+    if not name:
         return jsonify({"error": "Name is required"}), 400
 
     if not email:
@@ -24,43 +25,51 @@ def register():
     if not password:
         return jsonify({"error": "Password is required"}), 400
 
-    hashed_password= bcrypt.generate_password_hash(password).decode("utf-8")
+    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
 
-        # to check the user if they exist we query the db to check if the email exists
+    # to check the user if they exist we query the db to check if the email exists
 
     user = User.query.filter_by(email=email).first()
     if user:
-        return jsonify({"error": "User with this email already exists"}),400
+        return jsonify({"error": "User with this email already exists"}), 400
 
     new_user = User(name=name, email=email, password=hashed_password)
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify({"message": "User registered successfully"}), 201
+    access_token = create_access_token(identity=str(new_user.id))
 
+
+    return jsonify({
+        "access_token": access_token,
+        "user": {
+            "id": new_user.id,
+            "name": new_user.name,
+            "email": new_user.email
+        }
+    }), 201
 
 
 @user_bp.route("/login", methods=["POST"])
 def login():
     # get data from the frontend
-    data= request.get_json()
-    email= data.get("email")
-    password= data.get("password")
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
     # validate data
     if not email:
-        return jsonify({"error": "Email is required "}),400
-    
+        return jsonify({"error": "Email is required "}), 400
+
     # check if the user exists if not send an error message
 
-    user= User.query.filter_by(email=email).first()
+    user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
-
 
     if not bcrypt.check_password_hash(user.password, password):
         return jsonify({"error": "Invalid password"}), 400
     # if the user exists create a jwt token and send it to the frontend
-    
+
     print("user logged in successfully")
     print("creating jwt token")
 
@@ -68,4 +77,11 @@ def login():
 
     access_token = create_access_token(identity=str(user.id))
 
-    return jsonify({"access_token":access_token }),200
+    return jsonify({
+        "access_token": access_token,
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email
+        }
+    }), 200

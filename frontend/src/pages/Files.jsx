@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Folder, FileText, MoreVertical, Plus, Search, ChevronRight, Grid, List as ListIcon, Copy, Trash2, Edit2, X, Calendar as CalendarIcon, Clock, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
+import { api } from '../services/api';
 
 export default function Files() {
   const [meetings, setMeetings] = useState([]);
-  const [folders, setFolders] = useState(['General', 'Product', 'Marketing', 'Sales', 'Personal']);
+  const [folders, setFolders] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -13,90 +14,142 @@ export default function Files() {
   const [movingMeeting, setMovingMeeting] = useState(null);
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({ title: '', folder: '' });
+  const [editData, setEditData] = useState({ title: '', folder_id: '' });
   const [isCreatingInlineFolder, setIsCreatingInlineFolder] = useState(false);
   const [inlineFolderName, setInlineFolderName] = useState('');
+  const [editingFolder, setEditingFolder] = useState(null);
+  const [editFolderName, setEditFolderName] = useState('');
+
+  const fetchMeetings = async () => {
+    try {
+      const data = await api.getMeetings();
+      setMeetings(data.meetings);
+    } catch (error) {
+      console.error('Error fetching meetings:', error);
+    }
+  };
+
+  const fetchFolders = async () => {
+    try {
+      const data = await api.getFolders();
+      setFolders(data.folders);
+    } catch (error) {
+      console.error('Error fetching folders:', error);
+    }
+  };
 
   useEffect(() => {
-    const storedMeetings = localStorage.getItem('aura_meetings');
-    const storedFolders = localStorage.getItem('aura_folders');
-    if (storedMeetings) {
-      setMeetings(JSON.parse(storedMeetings));
-    }
-    if (storedFolders) {
-      const parsedFolders = JSON.parse(storedFolders);
-      if (parsedFolders.length > 0) {
-        setFolders(parsedFolders);
-      } else {
-        localStorage.setItem('aura_folders', JSON.stringify(['General', 'Product', 'Marketing', 'Sales', 'Personal']));
-      }
-    } else {
-      localStorage.setItem('aura_folders', JSON.stringify(['General', 'Product', 'Marketing', 'Sales', 'Personal']));
-    }
+    fetchMeetings();
+    fetchFolders();
   }, []);
 
-  const handleDuplicateMeeting = (meeting) => {
-    const newMeeting = {
-      ...meeting,
-      id: Date.now(),
-      title: `${meeting.title} (Copy)`,
-      date: new Date().toISOString()
-    };
-    const updatedMeetings = [newMeeting, ...meetings];
-    setMeetings(updatedMeetings);
-    localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-  };
-
-  const handleDeleteMeeting = (id) => {
-    const updatedMeetings = meetings.filter(m => m.id !== id);
-    setMeetings(updatedMeetings);
-    localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-  };
-
-  const handleSaveEdit = () => {
-    const updatedMeetings = meetings.map(m => 
-      m.id === selectedMeeting.id ? { ...m, title: editData.title, folder: editData.folder } : m
-    );
-    setMeetings(updatedMeetings);
-    localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-    setIsEditing(false);
-    setSelectedMeeting(updatedMeetings.find(m => m.id === selectedMeeting.id));
-  };
-
-  const handleCreateFolderInline = (e) => {
-    e.preventDefault();
-    if (inlineFolderName && !folders.includes(inlineFolderName)) {
-      const updatedFolders = [...folders, inlineFolderName];
-      setFolders(updatedFolders);
-      localStorage.setItem('aura_folders', JSON.stringify(updatedFolders));
-      setEditData({ ...editData, folder: inlineFolderName });
-      setInlineFolderName('');
-      setIsCreatingInlineFolder(false);
+  const handleDuplicateMeeting = async (meeting) => {
+    try {
+      await api.addMeeting({
+        title: `${meeting.title} (Copy)`,
+        duration: meeting.duration,
+        audio_url: meeting.audio_url,
+        folder_id: meeting.folder_id || 'General'
+      });
+      fetchMeetings();
+    } catch (error) {
+      console.error('Duplicate failed:', error);
     }
   };
 
-  const handleCreateFolder = (e) => {
-    e.preventDefault();
-    if (newFolderName && !folders.includes(newFolderName)) {
-      const updatedFolders = [...folders, newFolderName];
-      setFolders(updatedFolders);
-      localStorage.setItem('aura_folders', JSON.stringify(updatedFolders));
-      setNewFolderName('');
-      setIsCreatingFolder(false);
+  const handleDeleteMeeting = async (id) => {
+    try {
+      await api.deleteMeeting(id);
+      fetchMeetings();
+    } catch (error) {
+      console.error('Delete failed:', error);
     }
   };
 
-  const handleMoveMeeting = (folder) => {
-    const updatedMeetings = meetings.map(m => 
-      m.id === movingMeeting.id ? { ...m, folder } : m
-    );
-    setMeetings(updatedMeetings);
-    localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-    setMovingMeeting(null);
+  const handleSaveEdit = async () => {
+    try {
+      await api.updateMeeting(selectedMeeting.id, {
+        title: editData.title,
+        folder_id: editData.folder_id
+      });
+      await fetchMeetings();
+      setIsEditing(false);
+      const updated = (await api.getMeetings()).meetings.find(m => m.id === selectedMeeting.id);
+      setSelectedMeeting(updated);
+    } catch (error) {
+      console.error('Update failed:', error);
+    }
+  };
+
+  const handleCreateFolderInline = async (e) => {
+    e.preventDefault();
+    if (inlineFolderName && !folders.find(f => f.name === inlineFolderName)) {
+      try {
+        await api.addFolder(inlineFolderName);
+        await fetchFolders();
+        setEditData({ ...editData, folder_id: inlineFolderName });
+        setInlineFolderName('');
+        setIsCreatingInlineFolder(false);
+      } catch (error) {
+        console.error('Error creating folder:', error);
+      }
+    }
+  };
+
+  const handleCreateFolder = async (e) => {
+    e.preventDefault();
+    if (newFolderName && !folders.find(f => f.name === newFolderName)) {
+      try {
+        await api.addFolder(newFolderName);
+        await fetchFolders();
+        setNewFolderName('');
+        setIsCreatingFolder(false);
+      } catch (error) {
+        console.error('Error creating folder:', error);
+      }
+    }
+  };
+
+  const handleEditFolder = async (e) => {
+    e.preventDefault();
+    if (editFolderName && editingFolder) {
+      try {
+        await api.editFolder(editingFolder.id, editFolderName);
+        await fetchFolders();
+        setEditingFolder(null);
+        setEditFolderName('');
+      } catch (error) {
+        console.error('Error editing folder:', error);
+      }
+    }
+  };
+
+  const handleDeleteFolder = async (id) => {
+    if (window.confirm('Are you sure you want to delete this folder? Meetings in this folder will be moved to General.')) {
+      try {
+        await api.deleteFolder(id);
+        await fetchFolders();
+        if (selectedFolder === folders.find(f => f.id === id)?.name) {
+          setSelectedFolder('All');
+        }
+      } catch (error) {
+        console.error('Error deleting folder:', error);
+      }
+    }
+  };
+
+  const handleMoveMeeting = async (folder_id) => {
+    try {
+      await api.updateMeeting(movingMeeting.id, { folder_id });
+      fetchMeetings();
+      setMovingMeeting(null);
+    } catch (error) {
+      console.error('Move failed:', error);
+    }
   };
 
   const filteredMeetings = meetings.filter(m => {
-    const matchesFolder = selectedFolder === 'All' || m.folder === selectedFolder;
+    const matchesFolder = selectedFolder === 'All' || m.folder_id === selectedFolder;
     const matchesSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesFolder && matchesSearch;
   });
@@ -142,14 +195,44 @@ export default function Files() {
             label="All Meetings"
             count={meetings.length}
           />
-          {folders.map(folder => (
+          {!folders.find(f => f.name === 'General') && (
             <FolderButton 
-              key={folder}
-              active={selectedFolder === folder}
-              onClick={() => setSelectedFolder(folder)}
-              label={folder}
-              count={meetings.filter(m => m.folder === folder).length}
+              active={selectedFolder === 'General'}
+              onClick={() => setSelectedFolder('General')}
+              label="General"
+              count={meetings.filter(m => m.folder_id === 'General' || !m.folder_id).length}
             />
+          )}
+          {folders.map(folder => (
+            <div key={folder.id} className="relative group/folder-item">
+              <FolderButton 
+                active={selectedFolder === folder.name}
+                onClick={() => setSelectedFolder(folder.name)}
+                label={folder.name}
+                count={meetings.filter(m => m.folder_id === folder.name).length}
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover/folder-item:flex items-center gap-1">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingFolder(folder);
+                    setEditFolderName(folder.name);
+                  }}
+                  className="p-1 hover:bg-white/20 rounded-md transition-colors text-white/60 hover:text-white"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteFolder(folder.id);
+                  }}
+                  className="p-1 hover:bg-white/20 rounded-md transition-colors text-white/60 hover:text-red-400"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
           ))}
         </div>
 
@@ -169,7 +252,7 @@ export default function Files() {
               <tbody className="divide-y divide-brand-border">
                 {filteredMeetings.map((meeting) => (
                   <tr key={meeting.id} className="hover:bg-brand-muted/20 transition-colors group cursor-pointer">
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" onClick={() => setSelectedMeeting(meeting)}>
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-brand-muted rounded-lg group-hover:bg-brand-ink group-hover:text-white transition-colors">
                           <FileText className="w-5 h-5" />
@@ -178,7 +261,7 @@ export default function Files() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-brand-ink/50">
-                      {format(new Date(meeting.date), 'MMM d, yyyy')}
+                      {format(new Date(meeting.created_at || new Date()), 'MMM d, yyyy')}
                     </td>
                     <td className="px-6 py-4 text-sm text-brand-ink/50">
                       {meeting.duration}
@@ -186,21 +269,33 @@ export default function Files() {
                     <td className="px-6 py-4">
                       <div className="relative group/folder">
                         <span className="px-2 py-1 bg-brand-muted rounded-md text-[10px] font-black uppercase text-brand-ink/60 hover:bg-brand-accent hover:text-white transition-colors">
-                          {meeting.folder}
+                          {meeting.folder_id || 'General'}
                         </span>
                         <div className="absolute left-0 top-full mt-1 hidden group-hover/folder:block z-20 bg-white border border-brand-border rounded-xl shadow-xl p-2 min-w-[120px]">
                           <p className="text-[10px] font-black uppercase text-brand-ink/30 px-2 mb-1">Move to:</p>
-                          {folders.filter(f => f !== meeting.folder).map(f => (
+                          {meeting.folder_id !== 'General' && (
                             <button 
-                              key={f}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setMovingMeeting(meeting);
-                                handleMoveMeeting(f);
+                                handleMoveMeeting('General');
                               }}
                               className="w-full text-left px-2 py-1.5 text-xs font-bold hover:bg-brand-muted rounded-md transition-colors"
                             >
-                              {f}
+                              General
+                            </button>
+                          )}
+                          {folders.filter(f => f.name !== meeting.folder_id && f.name !== 'General').map(f => (
+                            <button 
+                              key={f.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMovingMeeting(meeting);
+                                handleMoveMeeting(f.name);
+                              }}
+                              className="w-full text-left px-2 py-1.5 text-xs font-bold hover:bg-brand-muted rounded-md transition-colors"
+                            >
+                              {f.name}
                             </button>
                           ))}
                         </div>
@@ -216,7 +311,7 @@ export default function Files() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedMeeting(meeting);
-                              setEditData({ title: meeting.title, folder: meeting.folder });
+                              setEditData({ title: meeting.title, folder_id: meeting.folder_id || '' });
                               setIsEditing(true);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold hover:bg-brand-muted rounded-md transition-colors"
@@ -334,10 +429,11 @@ export default function Files() {
                           ) : (
                             <select 
                               className="w-full px-4 py-2 bg-brand-muted rounded-xl border border-brand-border outline-none focus:ring-2 focus:ring-brand-accent"
-                              value={editData.folder}
-                              onChange={(e) => setEditData({...editData, folder: e.target.value})}
+                              value={editData.folder_id}
+                              onChange={(e) => setEditData({...editData, folder_id: e.target.value})}
                             >
-                              {folders.map(f => <option key={f} value={f}>{f}</option>)}
+                              <option value="General">General</option>
+                              {folders.filter(f => f.name !== 'General').map(f => <option key={f.id} value={f.name}>{f.name}</option>)}
                             </select>
                           )}
                         </div>
@@ -363,7 +459,7 @@ export default function Files() {
                         <h2 className="text-2xl font-bold">{selectedMeeting.title}</h2>
                         <button 
                           onClick={() => {
-                            setEditData({ title: selectedMeeting.title, folder: selectedMeeting.folder });
+                            setEditData({ title: selectedMeeting.title, folder_id: selectedMeeting.folder_id || '' });
                             setIsEditing(true);
                           }}
                           className="text-xs font-bold text-brand-accent hover:underline"
@@ -372,9 +468,9 @@ export default function Files() {
                         </button>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-brand-ink/50 font-medium">
-                        <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.date), 'MMM d, yyyy')}</span>
+                        <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.created_at || new Date()), 'MMM d, yyyy')}</span>
                         <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {selectedMeeting.duration}</span>
-                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{selectedMeeting.folder}</span>
+                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{selectedMeeting.folder_id || 'General'}</span>
                       </div>
                     </>
                   )}
@@ -457,6 +553,55 @@ export default function Files() {
                   <button 
                     type="button"
                     onClick={() => setIsCreatingFolder(false)}
+                    className="flex-1 py-3 rounded-2xl font-bold border border-brand-border hover:bg-brand-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Edit Folder Modal */}
+      <AnimatePresence>
+        {editingFolder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingFolder(null)}
+              className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[2rem] shadow-2xl p-8"
+            >
+              <h2 className="text-2xl font-bold mb-6">Edit Folder</h2>
+              <form onSubmit={handleEditFolder} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-widest text-brand-ink/40">Folder Name</label>
+                  <input 
+                    autoFocus
+                    type="text" 
+                    className="w-full px-4 py-3 bg-brand-muted rounded-2xl border border-brand-border outline-none focus:ring-2 focus:ring-brand-accent transition-all"
+                    value={editFolderName}
+                    onChange={(e) => setEditFolderName(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-brand-ink text-white py-3 rounded-2xl font-bold hover:scale-[1.02] transition-transform"
+                  >
+                    Save Changes
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setEditingFolder(null)}
                     className="flex-1 py-3 rounded-2xl font-bold border border-brand-border hover:bg-brand-muted transition-colors"
                   >
                     Cancel

@@ -5,6 +5,7 @@ from dotenv import load_dotenv, find_dotenv
 from datetime import timedelta
 from flask_migrate import Migrate
 from openai import OpenAI
+from flask_cors import CORS
 
 
 
@@ -15,6 +16,8 @@ load_dotenv()
 
 
 app= Flask(__name__)
+
+CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 
 app.config["SQLALCHEMY_DATABASE_URI"]= "sqlite:///voicenote_ai.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]= False

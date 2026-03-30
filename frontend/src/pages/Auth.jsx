@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Sparkles, Mail, Lock, User, Github } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function Auth({ setUser }) {
   const [searchParams] = useSearchParams();
@@ -13,17 +14,38 @@ export default function Auth({ setUser }) {
     name: ''
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Mock login
-    const user = {
-      name: formData.name || 'User',
-      email: formData.email,
-      avatar: `https://picsum.photos/seed/${formData.email}/100/100`
-    };
-    localStorage.setItem('aura_user', JSON.stringify(user));
-    setUser(user);
-    navigate('/dashboard');
+  
+    try {
+      let data;
+  
+      if (isSignup) {
+        // REGISTER
+        data = await api.register({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password
+        });
+      } else {
+        // LOGIN
+        data = await api.login({
+          email: formData.email,
+          password: formData.password
+        });
+      }
+  
+      // assuming your backend returns: { access_token, user }
+      localStorage.setItem('aura_token', data.access_token);
+      localStorage.setItem('aura_user', JSON.stringify(data.user));
+  
+      setUser(data.user);
+  
+      navigate('/dashboard');
+  
+    } catch (error) {
+      alert(error.message); // simple error handling
+    }
   };
 
   return (

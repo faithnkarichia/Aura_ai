@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mic, Square, Play, FileText, Sparkles, Clock, Calendar as CalendarIcon, ChevronRight, X, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
-import { transcribeAudio, summarizeTranscript } from '../services/ai';
+import { api } from '../services/api';
 
 export default function Dashboard() {
   const [isRecording, setIsRecording] = useState(false);
@@ -11,54 +11,35 @@ export default function Dashboard() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({ title: '', folder: '' });
-  const [folders, setFolders] = useState(['General', 'Product', 'Marketing', 'Sales', 'Personal']);
+  const [editData, setEditData] = useState({ title: '', folder_id: '' });
+  const [folders, setFolders] = useState([]);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   
   const mediaRecorder = useRef(null);
   const audioChunks = useRef([]);
 
-  useEffect(() => {
-    const storedMeetings = localStorage.getItem('aura_meetings');
-    const storedFolders = localStorage.getItem('aura_folders');
-    if (storedMeetings) {
-      setMeetings(JSON.parse(storedMeetings));
-    } else {
-      const initialMeetings = [
-        {
-          id: '1',
-          title: 'Product Sync - Q2 Roadmap',
-          date: new Date().toISOString(),
-          duration: '45:20',
-          summary: 'Discussed the upcoming features for Q2, focusing on AI integration and user experience improvements.',
-          transcript: 'Speaker 1: Welcome everyone. Today we are looking at the Q2 roadmap...',
-          folder: 'Product'
-        },
-        {
-          id: '2',
-          title: 'Marketing Brainstorm',
-          date: new Date(Date.now() - 86400000).toISOString(),
-          duration: '32:15',
-          summary: 'Brainstormed new campaign ideas for the summer launch. Decided on a "Simplify Your Life" theme.',
-          transcript: 'Speaker 1: Let\'s start with some wild ideas...',
-          folder: 'Marketing'
-        }
-      ];
-      setMeetings(initialMeetings);
-      localStorage.setItem('aura_meetings', JSON.stringify(initialMeetings));
+  const fetchMeetings = async () => {
+    try {
+      const data = await api.getMeetings();
+      setMeetings(data.meetings);
+    } catch (error) {
+      console.error('Error fetching meetings:', error);
     }
+  };
 
-    if (storedFolders) {
-      const parsedFolders = JSON.parse(storedFolders);
-      if (parsedFolders.length > 0) {
-        setFolders(parsedFolders);
-      } else {
-        localStorage.setItem('aura_folders', JSON.stringify(['General', 'Product', 'Marketing', 'Sales', 'Personal']));
-      }
-    } else {
-      localStorage.setItem('aura_folders', JSON.stringify(['General', 'Product', 'Marketing', 'Sales', 'Personal']));
+  const fetchFolders = async () => {
+    try {
+      const data = await api.getFolders();
+      setFolders(data.folders);
+    } catch (error) {
+      console.error('Error fetching folders:', error);
     }
+  };
+
+  useEffect(() => {
+    fetchMeetings();
+    fetchFolders();
   }, []);
 
   useEffect(() => {
@@ -92,54 +73,37 @@ export default function Dashboard() {
       mediaRecorder.current.onstop = async () => {
         setIsProcessing(true);
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' });
+        const duration = formatTime(recordTime);
         
-        // Auto-save immediately with default values
-        const tempId = Date.now().toString();
-        const defaultMeeting = {
-          id: tempId,
-          title: 'New Meeting',
-          date: new Date().toISOString(),
-          duration: formatTime(recordTime),
-          summary: 'AI is analyzing your meeting...',
-          transcript: 'Transcription in progress...',
-          folder: 'General'
-        };
-
-        const updatedMeetings = [defaultMeeting, ...meetings];
-        setMeetings(updatedMeetings);
-        localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-
-        // Prepare for editing
-        setEditData({ title: defaultMeeting.title, folder: defaultMeeting.folder });
-        setIsEditing(true);
-        setSelectedMeeting(defaultMeeting);
-
-        // Convert to base64 for Gemini
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64Audio = reader.result.split(',')[1];
+        try {
+          // 1. Upload to storage to get a public URL
+          const publicAudioUrl = await api.uploadAudio(audioBlob);
           
-          try {
-            // Real AI processing
-            const transcript = await transcribeAudio(base64Audio);
-            const summary = await summarizeTranscript(transcript);
+          // 2. Send to backend
+          const result = await api.addMeeting({
+            title: 'default',
+            duration: duration,
+            audio_url: publicAudioUrl,
+            folder_id: 'General'
+          });
 
-            // Update the auto-saved meeting with AI results
-            setMeetings(prev => {
-              const updated = prev.map(m => m.id === tempId ? { ...m, transcript, summary } : m);
-              localStorage.setItem('aura_meetings', JSON.stringify(updated));
-              return updated;
-            });
-            
-            // If the user is still looking at the modal for this meeting, update it
-            setSelectedMeeting(prev => prev?.id === tempId ? { ...prev, transcript, summary } : prev);
-          } catch (err) {
-            console.error("AI Processing failed:", err);
-          } finally {
-            setIsProcessing(false);
+          // 3. Refresh list
+          await fetchMeetings();
+          
+          // 4. Show edit modal for the new meeting
+          const data = await api.getMeetings();
+          const created = data.meetings.find(m => m.id === result.meeting_id);
+          if (created) {
+            setSelectedMeeting(created);
+            setEditData({ title: created.title, folder_id: created.folder_id || 'General' });
+            setIsEditing(true);
           }
-        };
+        } catch (err) {
+          console.error("Processing failed:", err);
+          alert(err.message);
+        } finally {
+          setIsProcessing(false);
+        }
       };
 
       mediaRecorder.current.start();
@@ -150,25 +114,33 @@ export default function Dashboard() {
     }
   };
 
-  const handleSaveEdit = () => {
-    const updatedMeetings = meetings.map(m => 
-      m.id === selectedMeeting.id ? { ...m, title: editData.title, folder: editData.folder } : m
-    );
-    setMeetings(updatedMeetings);
-    localStorage.setItem('aura_meetings', JSON.stringify(updatedMeetings));
-    setIsEditing(false);
-    setSelectedMeeting(updatedMeetings.find(m => m.id === selectedMeeting.id));
+  const handleSaveEdit = async () => {
+    try {
+      await api.updateMeeting(selectedMeeting.id, {
+        title: editData.title,
+        folder_id: editData.folder_id
+      });
+      await fetchMeetings();
+      setIsEditing(false);
+      const updated = (await api.getMeetings()).meetings.find(m => m.id === selectedMeeting.id);
+      setSelectedMeeting(updated);
+    } catch (error) {
+      console.error('Update failed:', error);
+    }
   };
 
-  const handleCreateFolderInline = (e) => {
+  const handleCreateFolderInline = async (e) => {
     e.preventDefault();
-    if (newFolderName && !folders.includes(newFolderName)) {
-      const updatedFolders = [...folders, newFolderName];
-      setFolders(updatedFolders);
-      localStorage.setItem('aura_folders', JSON.stringify(updatedFolders));
-      setEditData({ ...editData, folder: newFolderName });
-      setNewFolderName('');
-      setIsCreatingFolder(false);
+    if (newFolderName && !folders.find(f => f.name === newFolderName)) {
+      try {
+        await api.addFolder(newFolderName);
+        await fetchFolders();
+        setEditData({ ...editData, folder_id: newFolderName });
+        setNewFolderName('');
+        setIsCreatingFolder(false);
+      } catch (error) {
+        console.error('Error creating folder:', error);
+      }
     }
   };
 
@@ -327,10 +299,11 @@ export default function Dashboard() {
                           ) : (
                             <select 
                               className="w-full px-4 py-2 bg-brand-muted rounded-xl border border-brand-border outline-none focus:ring-2 focus:ring-brand-accent"
-                              value={editData.folder}
-                              onChange={(e) => setEditData({...editData, folder: e.target.value})}
+                              value={editData.folder_id}
+                              onChange={(e) => setEditData({...editData, folder_id: e.target.value})}
                             >
-                              {folders.map(f => <option key={f} value={f}>{f}</option>)}
+                              <option value="General">General</option>
+                              {folders.filter(f => f.name !== 'General').map(f => <option key={f.id} value={f.name}>{f.name}</option>)}
                             </select>
                           )}
                         </div>
@@ -365,9 +338,9 @@ export default function Dashboard() {
                         </button>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-brand-ink/50 font-medium">
-                        <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.date), 'MMM d, yyyy')}</span>
+                        <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.created_at || new Date()), 'MMM d, yyyy')}</span>
                         <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {selectedMeeting.duration}</span>
-                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{selectedMeeting.folder}</span>
+                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{selectedMeeting.folder_id || 'General'}</span>
                       </div>
                     </>
                   )}
@@ -433,10 +406,10 @@ function MeetingCard({ meeting, onClick }) {
       <div className="flex items-center gap-4 text-sm text-brand-ink/50 mb-4">
         <div className="flex items-center gap-1">
           <CalendarIcon className="w-4 h-4" />
-          {format(new Date(meeting.date), 'MMM d, yyyy')}
+          {format(new Date(meeting.created_at || new Date()), 'MMM d, yyyy')}
         </div>
         <div className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">
-          {meeting.folder}
+          {meeting.folder_id || 'General'}
         </div>
       </div>
 

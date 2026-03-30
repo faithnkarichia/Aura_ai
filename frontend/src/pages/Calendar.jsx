@@ -1,16 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Clock, MapPin, Sparkles } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [meetings, setMeetings] = useState([]);
 
   useEffect(() => {
-    const storedMeetings = localStorage.getItem('aura_meetings');
-    if (storedMeetings) {
-      setMeetings(JSON.parse(storedMeetings));
-    }
+    const fetchMeetings = async () => {
+      try {
+        const data = await api.getMeetings();
+        setMeetings(data.meetings);
+      } catch (error) {
+        console.error('Error fetching meetings:', error);
+      }
+    };
+    fetchMeetings();
   }, []);
 
   const monthStart = startOfMonth(currentDate);
@@ -26,7 +32,7 @@ export default function Calendar() {
       <div className="p-8 border-b border-brand-border flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold">{format(currentDate, 'MMMM yyyy')}</h2>
-          <p className="text-brand-ink/50 font-medium">You have {meetings.length} meetings scheduled this month</p>
+          <p className="text-brand-ink/50 font-medium">You have {meetings.filter(m => isSameDay(parseISO(m.created_at || new Date().toISOString()), currentDate)).length} meetings scheduled this month</p>
         </div>
         <div className="flex gap-2">
           <button onClick={prevMonth} className="p-3 hover:bg-brand-muted rounded-2xl transition-colors">
@@ -49,7 +55,7 @@ export default function Calendar() {
 
       <div className="grid grid-cols-7">
         {days.map((day, i) => {
-          const dayMeetings = meetings.filter(m => isSameDay(new Date(m.date), day));
+          const dayMeetings = meetings.filter(m => isSameDay(parseISO(m.created_at || new Date().toISOString()), day));
           return (
             <div 
               key={day.toString()}
@@ -73,7 +79,7 @@ export default function Calendar() {
                   >
                     <div className="flex items-center gap-1 text-brand-accent mb-1">
                       <Clock className="w-2.5 h-2.5" />
-                      {format(new Date(meeting.date), 'HH:mm')}
+                      {format(parseISO(meeting.created_at || new Date().toISOString()), 'HH:mm')}
                     </div>
                     <div className="truncate text-brand-ink leading-tight">{meeting.title}</div>
                   </div>

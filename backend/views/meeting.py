@@ -45,13 +45,7 @@ def add_meeting():
         headers = {
             "Authorization": f"Bearer {API_KEY}"
         }
-        # You can upload a local file using the following code
-        # with open("./my-audio.mp3", "rb") as f:
-        #   response = requests.post(base_url + "/v2/upload",
-        #                           headers=headers,
-        #                           data=f)
-        #
-        # audio_url = response.json()["upload_url"]
+    
 
         data = {
             "audio_url": audio_url,
