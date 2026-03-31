@@ -8,6 +8,8 @@
 
 
 const API_BASE_URL = 'http://127.0.0.1:5000'; // Proxy handles this or set to your backend URL
+const CLOUD_NAME = import.meta.env.VITE_CLOUD_NAME;
+const UPLOAD_PRESET = import.meta.env.VITE_UPLOAD_PRESET;
 
 const getAuthHeader = () => {
   const token = localStorage.getItem('aura_token');
@@ -136,16 +138,24 @@ export const api = {
   async uploadAudio(blob) {
     const formData = new FormData();
     formData.append('file', blob);
+    formData.append('upload_preset', UPLOAD_PRESET);
+  
     try {
-      const res = await fetch('https://file.io', {
-        method: 'POST',
-        body: formData
-      });
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`, 
+        {
+          method: 'POST',
+          body: formData
+        }
+      );
+  
       const data = await res.json();
-      return data.link;
+  
+      return data.secure_url;
+  
     } catch (e) {
       console.error("Upload failed", e);
-      throw new Error("Failed to upload audio to a public URL");
+      throw new Error("Failed to upload audio");
     }
   }
 };
