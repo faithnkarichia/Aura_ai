@@ -12,109 +12,149 @@ from datetime import datetime
 meeting_bp = Blueprint("meeting", __name__)
 
 
-API_KEY = os.getenv("API_KEY")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Configuration
+ASSEMBLY_AI_KEY = os.getenv("API_KEY")
+OPENAI_CLIENT = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+def format_dialogue(utterances):
+    """Turns AssemblyAI utterances into a clean dialogue format."""
+    return "\n".join([f"Speaker {u['speaker']}: {u['text']}" for u in utterances])
+
+def generate_summary(transcript_text):
+    """Uses GPT-4 to generate a high-level executive summary."""
+    system_prompt = """
+    You are a world-class Executive Assistant. Your task is to transform a meeting transcript into a concise, professional summary.
+    
+    Structure your response using these exact Markdown headers:
+    # 🎯 Executive Summary
+    (A 2-3 sentence high-level overview of the meeting's purpose and outcome)
+
+    # ✅ Key Decisions
+    (Bullet points of what was finalized or agreed upon)
+
+    # 📋 Action Items
+    (List specific tasks, who they are assigned to, and deadlines if mentioned. Use the format: **[Owner]**: Task)
+
+    # 💡 Important Discussion Points
+    (Key arguments or ideas shared during the meeting)
+
+    Rules: 
+    - Be concise.
+    - If a speaker's name isn't known, refer to them as 'Speaker A/B'.
+    - Ignore filler words (um, uh, like).
+    """
+    
+    response = OPENAI_CLIENT.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"TRANSCRIPT:\n{transcript_text}"}
+        ],
+        temperature=0.3 # Low temperature for high accuracy
+    )
+    return response.choices[0].message.content
 
 @meeting_bp.route("/add_meeting", methods=["POST"])
 @jwt_required(optional=True)
 def add_meeting():
-    print("Received request to add meeting")
+    print("Processing meeting audio...")
     try:
-        # get meeting data from the frontend ie title created_at,duration, audio_url
         data = request.get_json()
-
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
-
-        title = data.get("title")
-        if not title:
-            return jsonify({"error": "Title is required"}), 400
-
-        duration = data.get("duration")
-        audio_url = data.get("audio_url")
-        if not audio_url:
+        if not data or not data.get("audio_url"):
             return jsonify({"error": "Audio URL is required"}), 400
 
+        audio_url = data.get("audio_url")
+        title = data.get("title", "Untitled Meeting")
+        duration = data.get("duration", "")
         user_id = str(get_jwt_identity())
 
-        # we take the audio url and call the external endpoint to get the transcription
-
-        base_url = "https://api.assemblyai.com"
-
-        headers = {
-            "Authorization": f"Bearer {API_KEY}"
-        }
-    
-
-        data = {
+        #  Start AssemblyAI Transcription
+        headers = {"Authorization": f"Bearer {ASSEMBLY_AI_KEY}"}
+        assembly_payload = {
             "audio_url": audio_url,
-            "language_detection": True,
-            # Uses universal-3-pro for en, es, de, fr, it, pt. Else uses universal-2 for support across all other languages
-            "speech_models": ["universal-2"]
+            "speaker_labels": True,
+            "speech_models": ["universal-3-pro"],
+            "punctuate": True,
+            "format_text": True,
+            "filter_profanity": False,    # Set to True if you want to censor the transcript
+            "language_detection": True 
         }
 
-        url = base_url + "/v2/transcript"
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(
+            "https://api.assemblyai.com/v2/transcript", 
+            json=assembly_payload, 
+            headers=headers
+        )
+        
+        # CHECk if the initial request actually work?
+        res_data = response.json()
+        if response.status_code != 200:
+            print(f"AssemblyAI Post Error: {res_data}")
+            return jsonify({"error": res_data.get("error", "Failed to start transcription")}), response.status_code
 
-        transcript_id = response.json()['id']
+        transcript_id = res_data.get('id')
 
-        if not transcript_id:
-            return jsonify({"error": "Failed to start transcription"}), 400
-
-        polling_endpoint = base_url + "/v2/transcript/" + transcript_id
+        #  Polling for Completion
+        polling_url = f"https://api.assemblyai.com/v2/transcript/{transcript_id}"
         transcript_text = ""
+        
+        print(f"Polling started for ID: {transcript_id}")
 
         while True:
-            transcription_result = requests.get(
-                polling_endpoint, headers=headers).json()
-            if transcription_result['status'] == 'completed':
-                transcript_text = transcription_result.get('text', '')
-                if not transcript_text:
-                    return jsonify({"error": "Transcription completed but no text found"}), 400
-                print(f"Transcript Text: {transcript_text}")
+            polling_response = requests.get(polling_url, headers=headers)
+            result = polling_response.json()
+
+            # CHECK: Does 'status' exist in the response?
+            status = result.get('status') 
+            
+            if status == 'completed':
+                # Captures dialogue with speaker labels
+                utterances = result.get('utterances')
+                if utterances:
+                    transcript_text = format_dialogue(utterances)
+                else:
+                    transcript_text = result.get('text', '')
                 break
+                
+            elif status == 'error':
+                error_msg = result.get('error', 'Unknown AssemblyAI error')
+                print(f"AssemblyAI Polling Error: {error_msg}")
+                return jsonify({"error": f"Transcription failed: {error_msg}"}), 500
+            
+            elif status is None:
+                
+                print(f"Unexpected API Response: {result}")
+                return jsonify({"error": "Unexpected response from transcription service"}), 500
 
-            elif transcription_result['status'] == 'error':
-                raise RuntimeError(
-                    f"Transcription failed: {transcription_result['error']}")
+            print(f"Current Status: {status}...")
+            time.sleep(3)
 
-            else:
-                time.sleep(3)
+        # Generate Summary
+        print("Generating AI summary...")
+        summary = generate_summary(transcript_text)
 
-        response = client.chat.completions.create(
-            model="gpt-4",  # or "gpt-3.5-turbo" - gpt-5.2 doesn't exist
-            messages=[
-                {"role": "system", "content": "Summarize this meeting into clear bullet points with key decisions and action items."},
-                {"role": "user", "content": transcript_text}
-            ]
-        )
-        summary = response.choices[0].message.content
-        # we save both the summary and the transcription to the db
-
-        title = str(title) if title else ""
-        duration = str(duration) if duration else ""
-        audio_url = str(audio_url)
-        summary = str(summary) if summary else ""
-        transcript_text = str(transcript_text)
-
+        # Save to Database
         new_meeting = Meeting(
             title=title,
             duration=duration,
             audio_url=audio_url,
             summary=summary,
             transcript=transcript_text,
-
             user_id=user_id
         )
+        
         db.session.add(new_meeting)
         db.session.commit()
 
-        return jsonify({"message": "Meeting added successfully", "meeting_id": new_meeting.id}), 201
+        return jsonify({
+            "message": "Meeting processed successfully",
+            "meeting_id": new_meeting.id
+        }), 201
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-        # we take the transcription and send it to ai to get the summary
+        print(f"Caught Exception: {str(e)}")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
+   
 
 @meeting_bp.route("/get_meetings", methods=["GET"])
 @jwt_required()
