@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    volumes:
+      # This lets you edit code live without rebuilding (optional but nice)
+      - ./backend:/app
+      - ./backend/instance:/app/instance 
+    environment:
+      # Load from your backend .env file
+      - FLASK_ENV=development
+      # Manually add other env vars or use env_file
+    env_file:
+      - ./backend/.env
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      # Prevent node_modules from being overwritten
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    env_file:
+      - ./frontend/.env

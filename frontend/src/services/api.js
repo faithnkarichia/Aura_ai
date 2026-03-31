@@ -7,7 +7,7 @@
 
 
 
-const API_BASE_URL = 'http://127.0.0.1:5000'; // Proxy handles this or set to your backend URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const CLOUD_NAME = import.meta.env.VITE_CLOUD_NAME;
 const UPLOAD_PRESET = import.meta.env.VITE_UPLOAD_PRESET;
 
