@@ -1,18 +1,29 @@
-version: '3.8'
-
 services:
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: faith
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: voicenote_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build: ./backend
     ports:
       - "5000:5000"
     volumes:
-      # This lets you edit code live without rebuilding (optional but nice)
       - ./backend:/app
       - ./backend/instance:/app/instance 
+    depends_on:
+      - db
     environment:
-      # Load from your backend .env file
       - FLASK_ENV=development
-      # Manually add other env vars or use env_file
+      - DATABASE_URL=postgresql://faith:password123@postgres_db:5432/voicenote_db
     env_file:
       - ./backend/.env
 
@@ -22,9 +33,11 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app
-      # Prevent node_modules from being overwritten
       - /app/node_modules
     environment:
       - CHOKIDAR_USEPOLLING=true
     env_file:
       - ./frontend/.env
+
+volumes:
+  postgres_data:
