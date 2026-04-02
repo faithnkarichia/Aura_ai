@@ -17,7 +17,7 @@ load_dotenv()
 
 app= Flask(__name__)
 
-CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # app.config["SQLALCHEMY_DATABASE_URI"]= "sqlite:///voicenote_ai.db"
 app.config["SQLALCHEMY_DATABASE_URI"]= os.getenv("POSTGRESQL_URL")
