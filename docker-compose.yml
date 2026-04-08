@@ -23,7 +23,7 @@ services:
       - db
     environment:
       - FLASK_ENV=development
-      - DATABASE_URL=postgresql://faith:password123@postgres_db:5432/voicenote_db
+      - POSTGRESQL_URL=postgresql://faith:ECsNdJOe4eW3mB025O3CPlvLe76RQTLd@dpg-d76hjjbuibrs73bl11q0-a.oregon-postgres.render.com/voicenote_db
     env_file:
       - ./backend/.env
 
