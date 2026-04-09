@@ -14,7 +14,9 @@ meeting_bp = Blueprint("meeting", __name__)
 
 # Configuration
 ASSEMBLY_AI_KEY = os.getenv("API_KEY")
-OPENAI_CLIENT = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_CLIENT = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=os.getenv("OPENAI_API_KEY"))
 
 def format_dialogue(utterances):
     """Turns AssemblyAI utterances into a clean dialogue format."""
@@ -45,7 +47,7 @@ def generate_summary(transcript_text):
     """
     
     response = OPENAI_CLIENT.chat.completions.create(
-        model="gpt-4",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"TRANSCRIPT:\n{transcript_text}"}

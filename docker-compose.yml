@@ -4,9 +4,10 @@ services:
     container_name: postgres_db
     restart: always
     environment:
-      POSTGRES_USER: faith
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: voicenote_db
+      # Docker pulls these values directly from the .env file listed in the backend service
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -18,12 +19,8 @@ services:
       - "5000:5000"
     volumes:
       - ./backend:/app
-      - ./backend/instance:/app/instance 
     depends_on:
       - db
-    environment:
-      - FLASK_ENV=development
-      - POSTGRESQL_URL=postgresql://faith:ECsNdJOe4eW3mB025O3CPlvLe76RQTLd@dpg-d76hjjbuibrs73bl11q0-a.oregon-postgres.render.com/voicenote_db
     env_file:
       - ./backend/.env
 
@@ -34,8 +31,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - CHOKIDAR_USEPOLLING=true
     env_file:
       - ./frontend/.env
 
