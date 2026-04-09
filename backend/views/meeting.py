@@ -5,8 +5,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 import requests
 import time
 import os
-from openai import OpenAI
+# from openai import OpenAI
 from datetime import datetime
+from groq import Groq
 
 
 meeting_bp = Blueprint("meeting", __name__)
@@ -14,8 +15,8 @@ meeting_bp = Blueprint("meeting", __name__)
 
 # Configuration
 ASSEMBLY_AI_KEY = os.getenv("API_KEY")
-OPENAI_CLIENT = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
+OPENAI_CLIENT = Groq(
+    
     api_key=os.getenv("OPENAI_API_KEY"))
 
 def format_dialogue(utterances):
@@ -42,6 +43,11 @@ def generate_summary(transcript_text):
 
     Rules: 
     - Be concise.
+
+
+
+
+
     - If a speaker's name isn't known, refer to them as 'Speaker A/B'.
     - Ignore filler words (um, uh, like).
     """
@@ -75,7 +81,7 @@ def add_meeting():
         assembly_payload = {
             "audio_url": audio_url,
             "speaker_labels": True,
-            "speech_models": ["universal-3-pro"],
+            "speech_models": ["universal-3-pro", "universal-2"],
             "punctuate": True,
             "format_text": True,
             "filter_profanity": False,    # Set to True if you want to censor the transcript

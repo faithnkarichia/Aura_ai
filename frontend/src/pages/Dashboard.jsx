@@ -15,7 +15,7 @@ export default function Dashboard() {
   const [folders, setFolders] = useState([]);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  
+
   const mediaRecorder = useRef(null);
   const audioChunks = useRef([]);
 
@@ -60,6 +60,12 @@ export default function Dashboard() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Helper to get name from ID
+  const getFolderName = (id) => {
+    const folder = folders.find(f => f.id === id);
+    return folder ? folder.name : 'General';
+  };
+
   const handleStartRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -76,26 +82,26 @@ export default function Dashboard() {
         const duration = formatTime(recordTime);
         
         try {
-          // 1. Upload to storage to get a public URL
           const publicAudioUrl = await api.uploadAudio(audioBlob);
           
-          // 2. Send to backend
           const result = await api.addMeeting({
-            title: 'default',
+            title: 'New Meeting',
             duration: duration,
             audio_url: publicAudioUrl,
-            folder_id: 'General'
+            folder_id: null // Backend handles default integer ID
           });
 
-          // 3. Refresh list
           await fetchMeetings();
           
-          // 4. Show edit modal for the new meeting
           const data = await api.getMeetings();
           const created = data.meetings.find(m => m.id === result.meeting_id);
+          
           if (created) {
             setSelectedMeeting(created);
-            setEditData({ title: created.title, folder_id: created.folder_id || 'General' });
+            setEditData({ 
+              title: created.title || '', 
+              folder_id: created.folder_id || '' 
+            });
             setIsEditing(true);
           }
         } catch (err) {
@@ -118,11 +124,12 @@ export default function Dashboard() {
     try {
       await api.updateMeeting(selectedMeeting.id, {
         title: editData.title,
-        folder_id: editData.folder_id
+        folder_id: editData.folder_id === '' ? null : editData.folder_id
       });
       await fetchMeetings();
       setIsEditing(false);
-      const updated = (await api.getMeetings()).meetings.find(m => m.id === selectedMeeting.id);
+      const data = await api.getMeetings();
+      const updated = data.meetings.find(m => m.id === selectedMeeting.id);
       setSelectedMeeting(updated);
     } catch (error) {
       console.error('Update failed:', error);
@@ -131,16 +138,36 @@ export default function Dashboard() {
 
   const handleCreateFolderInline = async (e) => {
     e.preventDefault();
-    if (newFolderName && !folders.find(f => f.name === newFolderName)) {
-      try {
-        await api.addFolder(newFolderName);
-        await fetchFolders();
-        setEditData({ ...editData, folder_id: newFolderName });
-        setNewFolderName('');
-        setIsCreatingFolder(false);
-      } catch (error) {
-        console.error('Error creating folder:', error);
+    if (!newFolderName.trim()) return;
+
+    try {
+      // 1. Send the request to create the folder
+      await api.addFolder(newFolderName);
+      
+      // 2. Immediately fetch the fresh list of folders from the server
+      const data = await api.getFolders();
+      
+      // 3. Update the folders state so the UI stays in sync
+      setFolders(data.folders);
+
+      // 4. Find the folder we just created in the fresh list to get its integer ID
+      const newlyCreatedFolder = data.folders.find(
+        f => f.name.toLowerCase() === newFolderName.toLowerCase()
+      );
+
+      if (newlyCreatedFolder) {
+        setEditData(prev => ({ 
+          ...prev, 
+          folder_id: newlyCreatedFolder.id 
+        }));
       }
+
+      // 5. Reset UI states
+      setNewFolderName('');
+      setIsCreatingFolder(false);
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      alert("Failed to create folder. It might already exist.");
     }
   };
 
@@ -153,7 +180,6 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-12">
-      {/* Recording Section */}
       <section className="relative">
         <div className={cn(
           "p-12 rounded-[3rem] border-2 transition-all duration-500 flex flex-col items-center justify-center gap-8",
@@ -198,23 +224,9 @@ export default function Dashboard() {
               {isRecording ? formatTime(recordTime) : "Tap the mic to start capturing your meeting"}
             </p>
           </div>
-
-          {isRecording && (
-            <div className="flex gap-2">
-              {[...Array(12)].map((_, i) => (
-                <motion.div 
-                  key={i}
-                  animate={{ height: [10, Math.random() * 40 + 10, 10] }}
-                  transition={{ repeat: Infinity, duration: 0.5, delay: i * 0.05 }}
-                  className="w-1.5 bg-white/40 rounded-full"
-                />
-              ))}
-            </div>
-          )}
         </div>
       </section>
 
-      {/* Recent Meetings */}
       <section>
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-2xl font-bold">Recent Meetings</h2>
@@ -225,12 +237,16 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {meetings.map((meeting) => (
-            <MeetingCard key={meeting.id} meeting={meeting} onClick={() => setSelectedMeeting(meeting)} />
+            <MeetingCard 
+              key={meeting.id} 
+              meeting={meeting} 
+              folderName={getFolderName(meeting.folder_id)}
+              onClick={() => setSelectedMeeting(meeting)} 
+            />
           ))}
         </div>
       </section>
 
-      {/* Meeting Details Modal */}
       <AnimatePresence>
         {selectedMeeting && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
@@ -238,10 +254,7 @@ export default function Dashboard() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => {
-                setSelectedMeeting(null);
-                setIsEditing(false);
-              }}
+              onClick={() => { setSelectedMeeting(null); setIsEditing(false); }}
               className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm"
             />
             <motion.div 
@@ -268,12 +281,7 @@ export default function Dashboard() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <label className="text-xs font-black uppercase tracking-widest text-brand-ink/40">Folder</label>
-                            <button 
-                              onClick={() => setIsCreatingFolder(true)}
-                              className="text-[10px] font-bold text-brand-accent hover:underline"
-                            >
-                              + New Folder
-                            </button>
+                            <button onClick={() => setIsCreatingFolder(true)} className="text-[10px] font-bold text-brand-accent hover:underline">+ New Folder</button>
                           </div>
                           {isCreatingFolder ? (
                             <div className="flex gap-2">
@@ -284,43 +292,24 @@ export default function Dashboard() {
                                 placeholder="Folder name..."
                                 value={newFolderName}
                                 onChange={(e) => setNewFolderName(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleCreateFolderInline(e);
-                                  if (e.key === 'Escape') setIsCreatingFolder(false);
-                                }}
                               />
-                              <button 
-                                onClick={handleCreateFolderInline}
-                                className="px-3 py-1.5 bg-brand-ink text-white rounded-lg text-xs font-bold"
-                              >
-                                Add
-                              </button>
+                              <button onClick={handleCreateFolderInline} className="px-3 py-1.5 bg-brand-ink text-white rounded-lg text-xs font-bold">Add</button>
                             </div>
                           ) : (
                             <select 
                               className="w-full px-4 py-2 bg-brand-muted rounded-xl border border-brand-border outline-none focus:ring-2 focus:ring-brand-accent"
-                              value={editData.folder_id}
-                              onChange={(e) => setEditData({...editData, folder_id: e.target.value})}
+                              value={editData.folder_id ?? ""}
+                              onChange={(e) => setEditData({...editData, folder_id: parseInt(e.target.value) || ""})}
                             >
-                              <option value="General">General</option>
-                              {folders.filter(f => f.name !== 'General').map(f => <option key={f.id} value={f.name}>{f.name}</option>)}
+                              <option value="">General</option>
+                              {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                             </select>
                           )}
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button 
-                          onClick={handleSaveEdit}
-                          className="bg-brand-ink text-white px-6 py-2 rounded-xl font-bold text-sm hover:scale-105 transition-transform"
-                        >
-                          Save Changes
-                        </button>
-                        <button 
-                          onClick={() => setIsEditing(false)}
-                          className="px-6 py-2 rounded-xl font-bold text-sm border border-brand-border hover:bg-brand-muted transition-colors"
-                        >
-                          Cancel
-                        </button>
+                        <button onClick={handleSaveEdit} className="bg-brand-ink text-white px-6 py-2 rounded-xl font-bold text-sm hover:scale-105 transition-transform">Save Changes</button>
+                        <button onClick={() => setIsEditing(false)} className="px-6 py-2 rounded-xl font-bold text-sm border border-brand-border hover:bg-brand-muted transition-colors">Cancel</button>
                       </div>
                     </div>
                   ) : (
@@ -329,7 +318,7 @@ export default function Dashboard() {
                         <h2 className="text-2xl font-bold">{selectedMeeting.title}</h2>
                         <button 
                           onClick={() => {
-                            setEditData({ title: selectedMeeting.title, folder: selectedMeeting.folder });
+                            setEditData({ title: selectedMeeting.title, folder_id: selectedMeeting.folder_id ?? "" });
                             setIsEditing(true);
                           }}
                           className="text-xs font-bold text-brand-accent hover:underline"
@@ -340,41 +329,22 @@ export default function Dashboard() {
                       <div className="flex items-center gap-4 text-sm text-brand-ink/50 font-medium">
                         <span className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" /> {format(new Date(selectedMeeting.created_at || new Date()), 'MMM d, yyyy')}</span>
                         <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {selectedMeeting.duration}</span>
-                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{selectedMeeting.folder_id || 'General'}</span>
+                        <span className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{getFolderName(selectedMeeting.folder_id)}</span>
                       </div>
                     </>
                   )}
                 </div>
-                <button 
-                  onClick={() => {
-                    setSelectedMeeting(null);
-                    setIsEditing(false);
-                  }}
-                  className="p-3 hover:bg-brand-muted rounded-2xl transition-colors self-start"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <button onClick={() => { setSelectedMeeting(null); setIsEditing(false); }} className="p-3 hover:bg-brand-muted rounded-2xl transition-colors self-start"><X className="w-6 h-6" /></button>
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 space-y-8">
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-brand-accent font-bold uppercase tracking-widest text-xs">
-                    <Sparkles className="w-4 h-4" />
-                    AI Summary
-                  </div>
-                  <div className="p-6 bg-brand-muted rounded-3xl border border-brand-border text-brand-ink/80 leading-relaxed">
-                    {selectedMeeting.summary}
-                  </div>
+                  <div className="flex items-center gap-2 text-brand-accent font-bold uppercase tracking-widest text-xs"><Sparkles className="w-4 h-4" />AI Summary</div>
+                  <div className="p-6 bg-brand-muted rounded-3xl border border-brand-border text-brand-ink/80 leading-relaxed">{selectedMeeting.summary}</div>
                 </div>
-
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-brand-ink/40 font-bold uppercase tracking-widest text-xs">
-                    <FileText className="w-4 h-4" />
-                    Transcript
-                  </div>
-                  <div className="text-brand-ink/60 leading-relaxed whitespace-pre-wrap font-mono text-sm">
-                    {selectedMeeting.transcript}
-                  </div>
+                  <div className="flex items-center gap-2 text-brand-ink/40 font-bold uppercase tracking-widest text-xs"><FileText className="w-4 h-4" />Transcript</div>
+                  <div className="text-brand-ink/60 leading-relaxed whitespace-pre-wrap font-mono text-sm">{selectedMeeting.transcript}</div>
                 </div>
               </div>
             </motion.div>
@@ -385,7 +355,7 @@ export default function Dashboard() {
   );
 }
 
-function MeetingCard({ meeting, onClick }) {
+function MeetingCard({ meeting, folderName, onClick }) {
   return (
     <motion.div 
       whileHover={{ y: -4 }}
@@ -393,34 +363,17 @@ function MeetingCard({ meeting, onClick }) {
       className="p-6 bg-white rounded-3xl border border-brand-border hover:shadow-lg transition-all group cursor-pointer"
     >
       <div className="flex items-start justify-between mb-4">
-        <div className="p-3 bg-brand-muted rounded-2xl group-hover:bg-brand-ink group-hover:text-white transition-colors">
-          <FileText className="w-6 h-6" />
-        </div>
-        <div className="flex items-center gap-2 text-xs font-bold text-brand-ink/40 uppercase tracking-wider">
-          <Clock className="w-3 h-3" />
-          {meeting.duration}
-        </div>
+        <div className="p-3 bg-brand-muted rounded-2xl group-hover:bg-brand-ink group-hover:text-white transition-colors"><FileText className="w-6 h-6" /></div>
+        <div className="flex items-center gap-2 text-xs font-bold text-brand-ink/40 uppercase tracking-wider"><Clock className="w-3 h-3" />{meeting.duration}</div>
       </div>
-
       <h3 className="text-xl font-bold mb-2 group-hover:text-brand-accent transition-colors">{meeting.title}</h3>
       <div className="flex items-center gap-4 text-sm text-brand-ink/50 mb-4">
-        <div className="flex items-center gap-1">
-          <CalendarIcon className="w-4 h-4" />
-          {format(new Date(meeting.created_at || new Date()), 'MMM d, yyyy')}
-        </div>
-        <div className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">
-          {meeting.folder_id || 'General'}
-        </div>
+        <div className="flex items-center gap-1"><CalendarIcon className="w-4 h-4" />{format(new Date(meeting.created_at || new Date()), 'MMM d, yyyy')}</div>
+        <div className="px-2 py-0.5 bg-brand-muted rounded-md text-[10px] font-black uppercase">{folderName}</div>
       </div>
-
       <div className="p-4 bg-brand-muted/50 rounded-2xl border border-brand-border/50">
-        <div className="flex items-center gap-2 mb-2 text-xs font-bold text-brand-ink/70">
-          <Sparkles className="w-3 h-3 text-brand-accent" />
-          AI SUMMARY
-        </div>
-        <p className="text-sm text-brand-ink/60 line-clamp-2 leading-relaxed">
-          {meeting.summary}
-        </p>
+        <div className="flex items-center gap-2 mb-2 text-xs font-bold text-brand-ink/70"><Sparkles className="w-3 h-3 text-brand-accent" />AI SUMMARY</div>
+        <p className="text-sm text-brand-ink/60 line-clamp-2 leading-relaxed">{meeting.summary}</p>
       </div>
     </motion.div>
   );
